@@ -1,7 +1,7 @@
 """
 Functions for dimensionality reduction explanation.
 """
-
+import sys
 import math
 import numpy as np
 import pandas as pd
@@ -55,7 +55,7 @@ class DRX:
 
     def best_alpha(self, X, y, distances):  #IM: Added here the distances
         best_model = None
-        best_score = 10000
+        best_score = sys.maxsize
         alphas = [0.1, 1.0, 10]
         best_a = 0
         performances = []
@@ -70,7 +70,7 @@ class DRX:
         return best_model  #, best_a, performances
 
     def _choose_number_of_neighbours(self, instance):
-        return 2000
+        return int(len(self.initial_data)/10)
 
     def _get_coef(self, neighbours, transformed, distances, auto_alpha):
         reduced_dimensions = len(transformed[0])
