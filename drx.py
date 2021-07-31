@@ -162,7 +162,7 @@ class DRX:
         reduction technique.
 
         Args:
-            data: 2d array
+            data: 1d or 2d array. If 1d, shape (-1, 1) should be met.
             number_of_neighbours: the number of neighours we want to use to 
                 achieve the local interpretation. If 'auto' the number will be 
                 chosen depending on the dataset.
@@ -189,7 +189,7 @@ class DRX:
 
         transformed = self.model.transform(data)
         drx_transformed = []
-        mean = data.mean(axis=0)
+        mean = self.initial_data.mean(axis=0)
         for d in data:
             coefs_ = self.explain_instance(d, number_of_neighbours, auto_alpha,
                                            use_LIME)
