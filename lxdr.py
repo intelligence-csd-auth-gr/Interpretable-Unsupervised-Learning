@@ -1,7 +1,6 @@
-"""Dimensionality Reduction eXplained
 """
-
-
+Functions for dimensionality reduction explanation.
+"""
 import sys
 import math
 import numpy as np
@@ -10,80 +9,58 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.linear_model import Ridge
 from sklearn.neighbors import NearestNeighbors
+from sklearn.metrics import mean_squared_error, mean_absolute_error as mae
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
 from lime.lime_tabular import LimeTabularExplainer
+from tensorflow.keras import layers, losses, callbacks, Sequential
+from tensorflow.keras.models import Model
+import keras.backend as K
 
-
-class DRx:
-    """Dimensionality Reduction eXplained (DRx)
+class LXDR:
+    """Local Explanation of Dimensionality Reduction (LXDR)
 
     A technique for interpreting locally the results of DR techniques.
-
-    Parameters
-    ----------
-    dimensionality_reduction_model: model used to dimensionally reduce 
-                the data (should be fitted on the initial dataset prior the 
-                object creation).
-
-    feature_names: The names of the dataset columns.
-
-    initial_data: 2d array contaning the orgina dataset
-
+    
     """
-
+    
     def __init__(self,
                  dimensionality_reduction_model,
                  feature_names,
-                 initial_data=None):
+                 scope = 'local',
+                 initial_data=None,
+                 neural=False,
+                 mean=None):
+        """Init function.
+
+        Args:
+        dimensionality_reduction_model: model used to dimensionally reduce 
+                    the data (should be fitted on the initial dataset prior the 
+                    object creation).
+        feature_names: The names of the dataset column
+        scope: If the techinque will work locally or globally. Accepted values 'local', or 'global'.
+        initial_data: 2d array contaning the orgina dataset
+        neural: if the DR is an AutoEncoder
+        mean: if mean is going to be used during the training of the local models
+        """
+        
         self.model = dimensionality_reduction_model
         self.feature_names = feature_names
-        self.lime = LimeTabularExplainer(training_data=initial_data,
+        self.scope = scope
+        if scope == 'local':
+            self.lime = LimeTabularExplainer(training_data=initial_data,
                                          discretize_continuous=False,
                                          mode="regression",
                                          random_state=0)
-        self.knn = NearestNeighbors()
-        self.knn.fit(initial_data)
+            self.knn = NearestNeighbors()
+            self.knn.fit(initial_data)
         self.initial_data = initial_data
-
-    def normalise_(self, array):
-        """ normalizes the array
-
-        Normalizes the values of the array by deviding them with the absolute max
-        value.
-
-        Args:
-            array: A 1d array of shape (#features)
-
-        Returns:
-            1d array (the normalizes array)
-        """
-        array = np.array(array)
-        max_value = np.max(array)
-        min_value = np.min(array)
-        abs_max = max(abs(max_value), abs(min_value))
-        return array / abs_max
-
-    def kernel(self, array, d):
-        """ Kernel used for the normalization of distances
-
-        Function that normalizes the distances between the examined instance and 
-        its neighbors, by penalizing furthest neighbors. 
-
-        Args:
-            array: 1d array contaning the distances between the examined instance
-                and its neighbors
-
-            d: the dimensionality (the number of features after dimensionality reduction)
-
-        Returns:
-            1d array (the normalized array)
-        """
-        normilised_distances = []
-        for sample in array:
-            normilised_distances.append(
-                math.exp(-(sample * math.log(d) / 2)) * math.log(d))
-        return np.array(normilised_distances)
+        if mean is not None:
+            self.mean = mean
+        else:
+            self.mean = np.zeros(initial_data[0].shape)
+        self.neural = neural
+        self.global_ = {}
 
     def best_alpha(self, X, y, distances):
         """ Finds the best linear model for our data by searching multiple values 
@@ -93,9 +70,9 @@ class DRx:
         and the true values.
 
         Args:
-          X: 2d array of shape (# neighbors, features)
+          X: 2d array of shape (# neigbors, features)
 
-          y: 2d array of shape (# neghbors, reduced_features)
+          y: 2d array of shape (# neighbors, reduced_features)
 
           distances: 1d array contaning the distances between the examined instance
               and its neighbors
@@ -103,14 +80,15 @@ class DRx:
         Returns:
           best_model: the best permorming Ridge model 
         """
+        
         best_model = None
-        best_score = sys.maxsize
-        alphas = [0.1, 1.0, 10]
+        best_score = 1000000000
+        alphas = [0.001, 0.01, 0.1, 0.5, 0.9, 1.0, 1.5, 1.9, 10, 100, 1000]
         best_a = 0
         performances = []
         for a in alphas:
-            temp_model = Ridge(alpha=a).fit(X, y, distances)
-            temp_perfomance = abs(mean_squared_error(y, temp_model.predict(X)))
+            temp_model = Ridge(alpha=a, fit_intercept=False, random_state=7).fit(X, y)
+            temp_perfomance = mae(y, temp_model.predict(X), sample_weight=distances)
             performances.append(temp_perfomance)
             if temp_perfomance < best_score:
                 best_score = temp_perfomance
@@ -119,25 +97,25 @@ class DRx:
         return best_model
 
     def _choose_number_of_neighbours(self, instance):
-        """ Funtion determining the number of neighbors in case it is not defined 
+        """ Simpel funtion determining the number of neighbors in case it is not defined 
           by the user.
 
           Returns:
             int: number of neighbors
         """
-        return int(len(self.initial_data)/10)
+        return int(3*len(self.initial_data)/4)
 
-    def _get_coef(self, neighbours, transformed, distances, auto_alpha):
-        """ Generates the components (weights) of DRx
+    def _get_coef(self, neighbours, transformed, distances=None, auto_alpha=False):
+        """ Generates the components (weights) of LXDR
 
         Args:
-          neighbours: 2d array of shape (# neighbors, features) with the neghbors
+          neighbours: 2d array of shape (# neigbors, features) with the neighbors
 
-          transformed: 2d array of shape (# neghbors, reduced_features), the reduced 
+          transformed: 2d array of shape (# neighbors, reduced_features), the reduced 
               representation of the neighbors
 
           distances: 1d array contaning the distances between the examined instance
-              and its neighbors
+              and its neighbors. If distances are None, this is the Global Variant of LXDR (GXDR)
 
           auto_alpha: if True, function best_alpha will be used to find most 
               suitable alpha for the linear model. If False, default value of
@@ -151,24 +129,27 @@ class DRx:
         """
         reduced_dimensions = len(transformed[0])
         _coef_per_component = []
+                
         for component in range(reduced_dimensions):
+            tc = transformed[:, component]
             if auto_alpha:
-                linear_model = self.best_alpha(
-                    neighbours,
-                    transformed[:, component],
-                    distances)
+                linear_model = self.best_alpha(neighbours-self.mean,tc,distances)
             else:
-                linear_model = Ridge(alpha=1.0).fit(
-                    neighbours, 
-                    transformed[:, component],
-                    distances)
+                if distances is not None:
+                    linear_model = Ridge(alpha=1.0, fit_intercept=False, random_state=7).fit(neighbours-self.mean, tc, distances)
+                else: #is Global!
+                    if component not in self.global_:
+                        linear_model = Ridge(alpha=1.0, fit_intercept=False, random_state=7).fit(neighbours-self.mean, tc)
+                        self.global_[component] = linear_model
+                    else:
+                        linear_model = self.global_[component]
             _coef_per_component.append(linear_model.coef_)
         return np.array(_coef_per_component)
 
     def explain_instance(self,
                          instance,
                          number_of_neighbours='auto',
-                         auto_alpha=False,
+                         auto_alpha=True,
                          use_LIME=False):
         """Generates explanations (weights) for an instance.
         
@@ -195,55 +176,64 @@ class DRx:
                 reduced space, and n_features is the number of dimensions of 
                 the original space.
         """
-        if number_of_neighbours == 'auto':
-            number_of_neighbours = self._choose_number_of_neighbours(
-                instance)
-        
-        # get the neighborhood of the instance (using LIME or KNN)
-        if use_LIME:
-            neighbours = self.lime.give_me_the_neighbourhood(
-                instance,
-                self.model.transform,
-                num_samples=number_of_neighbours)[0]
+        # initialize neighbourhood
+        if self.scope == 'local':
+            if number_of_neighbours == 'auto':
+                number_of_neighbours = self._choose_number_of_neighbours(
+                    instance)
+            if use_LIME:
+                if self.neural:
+                    neighbours = self.lime.give_me_the_neighbourhood(
+                    instance,
+                    self.model.predict,
+                    num_samples=number_of_neighbours)[0]
+                else:
+                    neighbours = self.lime.give_me_the_neighbourhood(
+                    instance,
+                    self.model.transform,
+                    num_samples=number_of_neighbours)[0]
 
+            else:# NG=='KNNs'
+                neighbours = []
+                neighbours_ind = self.knn.kneighbors([instance],
+                                                     number_of_neighbours,
+                                                     return_distance=False)[0]
+                for i in neighbours_ind:
+                    neighbours.append(self.initial_data[i])
+                neighbours = np.array(neighbours)
+            neighbours = np.concatenate((np.array([instance]), neighbours))
         else:
-            neighbours = []
-            neighbours_ind = self.knn.kneighbors(
-                [instance],
-                number_of_neighbours,
-                return_distance=False)[0]
-            for i in neighbours_ind:
-                neighbours.append(self.initial_data[i])
-            neighbours = np.array(neighbours)
-
-        neighbours = np.concatenate((np.array([instance]), neighbours))
-
-        # dimensionally reduce the neighbors
-        transformed = self.model.transform(neighbours)
-
-        # get the distances and normalize them
-        distances = euclidean_distances([transformed[0]], transformed)[0]
-        distances = self.kernel(distances, len(instance))
-
-        _coef_per_component = self._get_coef(
-            neighbours, 
-            transformed,
-            distances, 
-            auto_alpha)
-
+            neighbours = self.initial_data
+        
+        # transform neighbors
+        if self.neural:
+            transformed = self.model.predict(neighbours)
+        else:
+            transformed = self.model.transform(neighbours)
+        
+        # create weights
+        if self.scope == 'local':
+            distances = euclidean_distances([neighbours[0]], neighbours)[0]
+            normilised_distances = []
+            for sample in distances:
+                normilised_distances.append(
+                    math.exp(-(2*sample)))
+            distances= np.array(normilised_distances)
+            
+            _coef_per_component = self._get_coef(neighbours, transformed, distances, auto_alpha)
+        else:
+            _coef_per_component = self._get_coef(neighbours, transformed, None, False)
         return _coef_per_component
 
     def find_reconstruction_error(self,
                                   data,
                                   number_of_neighbours='auto',
-                                  auto_alpha=False,
-                                  use_LIME=False,
-                                  use_mean=False,
-                                  normalised=True):
+                                  auto_alpha=True,
+                                  use_LIME=False):
         """Prints reconstruction error  
 
         Prints mean absolute error, cosine error, euclidean error between the 
-        reduced data extracted through DRx and the dimensionality 
+        reduced data extracted through the linear model and the dimensionality 
         reduction technique.
 
         Args:
@@ -267,43 +257,41 @@ class DRx:
                 mae: mean absolute error (use of sklearn mean_absolute_error)
                 cos_error: cosine error (use of sklearn cosine_similarity)
                 euc_error: euclidean error (use of sklearn euclidean_distances)
+        euc_error: euclidean error (use of sklearn euclidean_distances)
         """
         if number_of_neighbours == 'auto':
             number_of_neighbours = self._choose_number_of_neighbours(
                 data[0])
 
         transformed = self.model.transform(data)
-        drx_transformed = []
+        lxdr_transformed = []
         mean = self.initial_data.mean(axis=0)
         for d in data:
             coefs_ = self.explain_instance(d, number_of_neighbours, auto_alpha,
                                            use_LIME)
             # mean center the instances
             d_new = d
-            if use_mean:
-                d_new = d_new - mean
+            d_new = d_new - self.mean
 
-            # By multiplying the mean centred insances with the coef (DRx weights),
-            # we are able to create the reduced space data (drx_transformed).
-            drx_tr = []
+            # By multiplying the mean centred insances with the coef_,
+            # we are able to create the reduced space data (lxdr_transformed).
+            lxdr_tr = []
             for coef in coefs_:
-                drx_tr.append(sum(d_new * coef))
-            drx_transformed.append(np.array(drx_tr))
+                lxdr_tr.append(sum(d_new * coef))
+            lxdr_transformed.append(np.array(lxdr_tr))
 
-        # calculate mean_absolute_error, cosine error and euclidean error
         cos_sum = 0
         euc_sum = 0
         for sample in range(len(transformed)):
             ts = transformed[sample]
-            dr = drx_transformed[sample]
-            if normalised:
-                ts = self.normalise_(ts)
-                dr = self.normalise_(dr)
+            dr = lxdr_transformed[sample]
             cos_sum += 1 - cosine_similarity(np.array([ts]), np.array([dr]))
             euc_sum += euclidean_distances(np.array([ts]), np.array([dr]))
+        
+        # calculate mean_absolute_error, cosine error and euclidean error
         cos_error = cos_sum / len(transformed)
         euc_error = euc_sum / len(transformed)
-        mae = mean_absolute_error(transformed, drx_transformed)
+        mae = mean_absolute_error(transformed, lxdr_transformed)
 
         print("mean_absolute_error = ", mae)
         print("cosine error = ", cos_error[0][0])
@@ -314,15 +302,14 @@ class DRx:
     def find_weights_error(self,
                            data,
                            number_of_neighbours='auto',
-                           auto_alpha=False,
-                           use_LIME=False,
-                           normalised=True):
+                           auto_alpha=True,
+                           use_LIME=False):
         """Prints weight error  
 
         This function only works when the dimensionality reduction technique is 
         able to return weights per each component. Prints mean absolute 
         error, cosine error, euclidean error between the weigths created through
-        DRx, and weights extracted through the dimensionality 
+        the linear model, and weights extracted through the dimensionality 
         reduction technique.
 
         Args:
@@ -345,8 +332,6 @@ class DRx:
                 cos: cosine error (use of sklearn cosine_similarity)
                 euc: euclidean error (use of sklearn euclidean_distances)
         """
-
-        # in case the DR technique does not provide weights per component
         if self.model.components_ is not None:
             original_coefs_ = self.model.components_
         else:
@@ -365,20 +350,14 @@ class DRx:
         euc = 0
         count = 0
         for d in data:
-            coefs_ = self.explain_instance(
-                d,
-                number_of_neighbours, 
-                auto_alpha,
-                use_LIME)
+            coefs_ = self.explain_instance(d, number_of_neighbours, auto_alpha,
+                                           use_LIME)
             
             # caclulate error between weights provided by the DR technique (original_coefs_)
-            # and weights provided by DRx (coefs_)
+            # and weights provided by lxdr (coefs_)
             for dimension in range(len(coefs_)):
                 oc = original_coefs_[dimension]
                 c = coefs_[dimension]
-                if normalised:
-                    oc = self.normalise_(oc)
-                    c = self.normalise_(c)
                 mae += mean_absolute_error(np.array([oc]), np.array([c]))
                 cos += 1 - cosine_similarity(np.array([oc]), np.array(
                     [c]))[0][0]
@@ -397,16 +376,15 @@ class DRx:
 
     def visualise_weights(self,
                           instance,
-                          dimension=0,
                           number_of_neighbours='auto',
-                          auto_alpha=False,
+                          auto_alpha=True,
                           use_LIME=False,
-                          normalised=True):
+                          dimension=0):
         """Visual comparison of weights.
         
         This function only works when the dimensionality reduction technique is 
         able to return weights per each component. Creates a plot that 
-        compares weights extracted from DRx and the dimensionality
+        compares weights extracted from the linear model and the dimensionality
         reduction technique, of a particular dimension of the instance.
 
         Args:
@@ -424,8 +402,6 @@ class DRx:
             normalised: if True, data will be divided with the absolute max 
                 value of the data.
         """
-
-        # in case the DR technique does not provide weights per component
         if self.model.components_ is not None:
             original_coef_ = self.model.components_[dimension]
         else:
@@ -438,39 +414,31 @@ class DRx:
             number_of_neighbours = self._choose_number_of_neighbours(
                 instance)
 
-        dr_coefs_ = self.explain_instance(
-            instance, 
-            number_of_neighbours,
-            auto_alpha, 
-            use_LIME)
-
-        if normalised:
-            original_coef_ = self.normalise_(original_coef_)
-            dr_coefs_ = self.normalise_(dr_coefs_[dimension])
+        dr_coefs_ = self.explain_instance(instance, number_of_neighbours,
+                                          auto_alpha, use_LIME)
 
         plotdata = pd.DataFrame({
-            "DRx": dr_coefs_,
-            "DRt": original_coef_
+            "Model": dr_coefs_[dimension],
+            "PCA": original_coef_
         },
                                 index=self.feature_names)
-        plt.rcParams["figure.figsize"] = [6, 6]
+        plt.rcParams["figure.figsize"] = [7, 7]
+        plt.rcParams["figure.dpi"] = 200
         plotdata.plot(kind="bar", rot=0)
-        plt.title("value comparison")
-        plt.xlabel("features")
-        plt.ylabel("values")
+        plt.title("Weights comparison")
+        plt.xlabel("Features")
+        plt.ylabel("Weights")
         plt.show()
 
     def visualise_reconstructed(self,
                                 instance,
                                 number_of_neighbours='auto',
-                                auto_alpha=False,
-                                use_LIME=False,
-                                use_mean=False,
-                                normalised=True):
+                                auto_alpha=True,
+                                use_LIME=False):
         """Visual comparison of dimensionally reduced instances.
         
         Reconstructs the dimensionally redueced data throught the weights extracted
-        from DRx, and compares them with the dimensionally reduced 
+        from the linear model, and compares them with the dimensionally reduced 
         given from the dimensionality reduction technique for a particular 
         instance.
 
@@ -494,49 +462,42 @@ class DRx:
             number_of_neighbours = self._choose_number_of_neighbours(
                 instance)
 
-        dr_coefs_ = self.explain_instance(
-            instance, 
-            number_of_neighbours,
-            auto_alpha, 
-            use_LIME)
+        dr_coefs_ = self.explain_instance(instance, number_of_neighbours,
+                                          auto_alpha, use_LIME)
 
         transformed = self.model.transform(np.array([instance]))[0]
 
-        # mean centre the insatce
         mean = self.initial_data.mean(axis=0)
-        d_new = instance
-        if use_mean:
-            d_new = d_new - mean
+        instance = instance - self.mean
 
-        # create the reduced space instance with the use of DRx weights
-        drx_tr = []
+        lxdr_tr = []
         for coef in dr_coefs_:
-            drx_tr.append(sum(d_new * coef))
-        drx_tr = np.array(drx_tr)
+            lxdr_tr.append(sum(instance * coef))
+        lxdr_tr = np.array(lxdr_tr)
 
-        if normalised:
-            drx_tr = self.normalise_(drx_tr)
-            transformed = self.normalise_(transformed)
-
-        # DRt will be the DR technique (e.g. PCA)
-        plotdata = pd.DataFrame({"DRx": drx_tr, "DRt": transformed})
-        plt.rcParams["figure.figsize"] = [6, 6]
+        components = []
+        for i in range(1,len(dr_coefs_)+1):
+            components.append("C" + str(i))
+            
+        plotdata = pd.DataFrame({"LXDR": lxdr_tr, "PCA": transformed})
+        plt.rcParams["figure.figsize"] = [6, 5]
+        plt.rcParams["figure.dpi"] = 200
         plotdata.plot(kind="bar", rot=0)
-        plt.title("value comparison")
-        plt.xlabel("latent features")
-        plt.ylabel("values")
+        plt.title("Values comparison")
+        plt.xlabel("Components")
+        plt.ylabel("Values")
+        #plt.axes.set_xticklabels(components)
         plt.show()
 
     def create_heatmap(self,
                        instance,
                        number_of_neighbours='auto',
-                       auto_alpha=False,
-                       use_LIME=False,
-                       normalised=True):
+                       auto_alpha=True,
+                       use_LIME=False):
         """Heatmap weight comparison.
         
         Plots a Heatmap showing the difference between weigths extracted through
-        the DRx and weigths extracted from the dimensionality reduction
+        the linear model and weigths extracted from the dimensionality reduction
         technique, for a particular instance.
 
         Args:
@@ -553,8 +514,6 @@ class DRx:
             normalised: if True, data will be divided with the absolute max 
                 value of the data.
         """
-
-        # in case the DR technique does not provide weights per component
         if self.model.components_ is not None:
             original_coefs_ = self.model.components_
         else:
@@ -570,19 +529,14 @@ class DRx:
         dr_coefs_ = self.explain_instance(instance, number_of_neighbours,
                                           auto_alpha, use_LIME)
 
-        if normalised:
-            original_coefs_ = np.array([
-                self.normalise_(original_coef_) for original_coef_ in original_coefs_
-            ])
-            dr_coefs_ = np.array(
-                [self.normalise_(dr_coef_) for dr_coef_ in dr_coefs_])
-
         # this is used for labeling
         components = []
-        for i in range(len(dr_coefs_)):
+        for i in range(1,len(dr_coefs_)+1):
             components.append("C" + str(i))
 
-        scores = abs(np.subtract(original_coefs_, dr_coefs_))
+        scores = abs(np.subtract(original_coefs_, dr_coefs_))*1000
+        plt.rcParams["figure.figsize"] = [6, 4.5]
+        plt.rcParams["figure.dpi"] = 200
         ax = sns.heatmap(scores,
                          annot=True,
                          fmt='.2f',
@@ -593,61 +547,47 @@ class DRx:
 
         plt.xlabel('Features')
         plt.ylabel('Components')
-        plt.title("error between weights")
+        plt.title("Error between weights")
         plt.show()
 
     def get_feature_importance(self, 
                                instance, 
                                number_of_neighbours='auto', 
                                auto_alpha=False, 
-                               use_LIME=False,
-                               use_mean=False,
-                               normalised=True):
-      """ Creates and printd an array shaped (N_features, N_reduced_features) 
-      where for each reduced features, highlights the original feature that 
-      contributed the most to its creation.
+                               use_LIME=False):
+        """ Creates and printd an array shaped (N_features, N_reduced_features) 
+        where for each reduced features, highlights the original feature that 
+        contributed the most to its creation.
+        Args:
+            instance: 1d array representing a particular sample
+            number_of_neighbours: the number of neighours we want to use to 
+                achieve the local interpretation. If 'auto' the number will be 
+                chosen depending on the dataset.
+            auto_alpha: if True, function best_alpha will be used to find most 
+                suitable alpha for the linear model. If False, default value of
+                alpha will be used (alpha=1.0).
+            use_LIME: if True, function give_me_the_neighbourhood of 
+                LimeTabularExplainer is used for the neighbourhood extraction.
+                If False, sklearn NearestNeighbors() will be used.
+        """
 
-      Args:
-          instance: 1d array representing a particular sample
-          number_of_neighbours: the number of neighours we want to use to 
-              achieve the local interpretation. If 'auto' the number will be 
-              chosen depending on the dataset.
-          auto_alpha: if True, function best_alpha will be used to find most 
-              suitable alpha for the linear model. If False, default value of
-              alpha will be used (alpha=1.0).
-          use_LIME: if True, function give_me_the_neighbourhood of 
-              LimeTabularExplainer is used for the neighbourhood extraction.
-              If False, sklearn NearestNeighbors() will be used. 
-          use_mean: if True, mean value of the data will be subtracted for 
-              each instance.
-          normalised: if True, data will be divided with the absolute max 
-              value of the data.
-      """
+        dr_coefs_ = self.explain_instance(instance, number_of_neighbours,
+                                            auto_alpha, use_LIME)
 
-      dr_coefs_ = self.explain_instance(instance, number_of_neighbours,
-                                          auto_alpha, use_LIME)
+        # mean centre the instance
+        instance = instance - self.mean
 
-      # mean centre data
-      mean = self.initial_data.mean(axis=0)
-      d_new = instance
-      if use_mean:
-          d_new = d_new - mean
+        # get the feature contribution 
+        all_values = []
+        for i in range(len(dr_coefs_)):
+          value_with_drx = instance  *  dr_coefs_.T[:,i]
+          all_values.append(value_with_drx)
 
-      if normalised:
-        dr_coefs_ = np.array(
-                [self.normalise_(dr_coef_) for dr_coef_ in dr_coefs_])
-      
-      # get the feature contribution 
-      all_values = []
-      for i in range(len(dr_coefs_)):
-        value_with_drx = d_new  *  dr_coefs_.T[:,i]
-        all_values.append(value_with_drx)
-
-      # display a matrix with the feature imporance (how much has each feature
-      # contributed for the creation of each reduced representation)
-      # The feature with the greater contribution is highlighted with green
-      # NOTE: for visualization purposes, the values have been converted to their
-      #       abs value
-      df = pd.DataFrame(np.array([abs(ele) for ele in all_values]).T)
-      df = df.style.highlight_max(color = 'green', axis = 0)
-      display(df)
+        # display a matrix with the feature imporance (how much has each feature
+        # contributed for the creation of each reduced representation)
+        # The feature with the greater contribution is highlighted with green
+        # NOTE: for visualization purposes, the values have been converted to their
+        #       abs value
+        df = pd.DataFrame(np.array([abs(ele) for ele in all_values]).T)
+        df = df.style.highlight_max(color = 'green', axis = 0)
+        display(df)
