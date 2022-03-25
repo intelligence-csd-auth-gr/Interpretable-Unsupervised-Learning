@@ -20,7 +20,7 @@ mean = X.mean(axis=0)
 
 lxdr = LXDR(dr, feature_names, 'local', X, False, mean)
 
-lxdr.explain_instance(X[1], number_of_neghbours=50, auto_alpha=True, use_LIME=False)
+lxdr.explain_instance(X[1], number_of_neighbours=50, auto_alpha=True, use_LIME=False)
 ```
 
 ## Contributors on LXDR
