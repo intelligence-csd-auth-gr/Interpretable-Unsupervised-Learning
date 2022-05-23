@@ -26,13 +26,13 @@ lxdr.explain_instance(X[1], number_of_neighbours=50, auto_alpha=True, use_LIME=F
 ## Contributors on LXDR
 Name | Email
 --- | ---
-[X](linkX) | X@email.comm
-[X](linkX) | X@email.comm
-[X](linkX) | X@email.comm
-[X](linkX) | X@email.comm
+| Avraam Bardos | ampardos@csd.auth.gr |
+| Ioannis Mollas | iamollas@csd.auth.gr |
+| Grigorios Tsoumakas | greg@csd.auth.gr |
+| Nick Bassiliades | nbassili@csd.auth.gr |
 
 ## Cite our Work
-[PAPER](link): Title] Coming
+[Local Explanation of Dimensionality Reduction](https://arxiv.org/abs/2204.14012)] To be presented in [SETN2022](https://hilab.di.ionio.gr/setn2022/)
 
 ## License
 [GNU GPLv3](https://choosealicense.com/licenses/gpl-3.0/)
