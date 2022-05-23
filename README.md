@@ -32,7 +32,7 @@ Name | Email
 | Nick Bassiliades | nbassili@csd.auth.gr |
 
 ## Cite our Work
-[Local Explanation of Dimensionality Reduction](https://arxiv.org/abs/2204.14012)] To be presented in [SETN2022](https://hilab.di.ionio.gr/setn2022/)
+Paper: [Local Explanation of Dimensionality Reduction](https://arxiv.org/abs/2204.14012) | To be presented in [SETN2022](https://hilab.di.ionio.gr/setn2022/)
 
 ## License
 [GNU GPLv3](https://choosealicense.com/licenses/gpl-3.0/)
