@@ -1,32 +1,21 @@
 # LXDR
-LXDR: Local Explanation of Dimensionality Reduction
+Exploring Local Interpretability in Dimensionality Reduction: Analysis and Use Cases
 
-Dimensionality reduction (DR) is a popular method for preparing and analyzing high-dimensional data. Reduced data representations are less computationally intensive and easier to manage and visualize, while retaining a significant percentage of their original information. Aside from these advantages, these reduced representations can be difficult or impossible to interpret in most circumstances, especially when the DR approach does not provide further information about which features of the original space led to their construction. This problem is addressed by Interpretable Machine Learning, a subfield of Explainable Artificial Intelligence that addresses the opacity of machine learning models. However, current research on Interpretable Machine Learning has been focused on supervised tasks, leaving unsupervised tasks like Dimensionality Reduction unexplored. In this paper, we introduce LXDR, a technique capable of providing local interpretations of the output of DR techniques. Experiment results and a LXDR use case example is presented to evaluate its usefulness.
+Dimensionality reduction is a crucial area in artificial intelligence that enables the visualization and analysis of high-dimensional data. A use of dimensionality reduction is to lower the dimensional complexity of data, improving the performance of machine learning models. Non-linear dimensionality reduction approaches, which provide higher quality representations than linear ones, lack interpretability, prohibiting their application in tasks requiring interpretability. This paper presents LXDR (Local eXplanation of Dimensionality Reduction), a local, model-agnostic technique that can be applied to any DR technique. LXDR trains linear models around a neighborhood of a specific instance and provides local interpretations using a variety of neighborhood generation techniques. Variations of the proposed technique are also introduced. The effectiveness of LXDR's interpretations is evaluated by quantitative and qualitative experiments, as well as demonstrations of its practical implementation in diverse use cases. The experiments emphasize the importance of interpretability in dimensionality reduction and how LXDR reinforces it.
 
-## Instructions
-Please, if you want to try LXDR with LIME you will need the follow this procedure:
-```
-!pip install lime==0.2.0.1
-```
-Then, replace the file lime_tabular.py to the correspoding directory (e.g. /usr/local/lib/python3.7/dist-packages/lime/)
+## Requirements
+- For the quantitative analysis experiments, and for the two use cases (1 - supervised regression and topic representationn), we used req.txt, and we run the experiments in a docker build with the instructions apparent on "Dockerfile".
+- For the Extreme multi-label classification use case (3rd), we use the req.txt python libraries, and run the experiments in Colab Pro.
 
-## Example
-```
-X, y, feature_names = load_your_data()
-dr = DR(n_components=8) #initialize the DR technique you want, and the number of dimensions to reduce to
-dr.fit(X)
-X_t = dr.transform(X)
-mean = X.mean(axis=0)
-
-lxdr = LXDR(dr, feature_names, 'local', X, False, mean)
-
-lxdr.explain_instance(X[1], number_of_neighbours=50, auto_alpha=True, use_LIME=False)
-```
+## Use cases
+1. Supervised Regression: The objective of this use case is twofold. Firstly, we aim to demonstrate how LXDR can be utilized to obtain feature importance explanations for the predictions made by a regression model trained on dimensionally reduced data. Additionally, we aim to evaluate the accuracy and faithfulness of these explanations.
+2. Topic Representation: Topic representation enables us to generate embeddings for lengthy documents. This is done by identifying key topics for each document, which are then used to create the final representation. Topic embeddings can be utilized for both unsupervised and supervised tasks. In this example, we will demonstrate how LXDR can be used in a multi-class classification problem with topic embeddings.
+3. Extreme Multi-Label Classification: In this use case, we are showcasing how LXDR can be applied to an extreme multi-label classification task. We will use the [BioASQ challenge datasets](http://bioasq.org/participate/challenges), which consist of biomedical publications indexed with Medical Subject Headings (MeSH), and are a set of data that fits within the extreme multi-label classification paradigm. Each dataset contains over a million documents and focuses on a particular year of the MeSH vocabulary, ranging from 2013 to 2023 (the most recent). The articles are labeled with MeSH descriptors, with each one having an average of 13 descriptors among a pool of over 30,000. We examined a subset of the 2020 BioASQ dataset for this use case, which contained approximately 45k articles indexed with 17k descriptors, with each article being associated with 14 of them on average.
 
 ## Contributors on LXDR
 Name | Email
 --- | ---
-| Avraam Bardos | ampardos@csd.auth.gr |
+| Nikolaos Mylonas | myloniko@csd.auth.gr |
 | Ioannis Mollas | iamollas@csd.auth.gr |
 | Grigorios Tsoumakas | greg@csd.auth.gr |
 | Nick Bassiliades | nbassili@csd.auth.gr |
