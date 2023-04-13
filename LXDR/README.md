@@ -4,7 +4,7 @@ Exploring Local Interpretability in Dimensionality Reduction: Analysis and Use C
 Dimensionality reduction is a crucial area in artificial intelligence that enables the visualization and analysis of high-dimensional data. A use of dimensionality reduction is to lower the dimensional complexity of data, improving the performance of machine learning models. Non-linear dimensionality reduction approaches, which provide higher quality representations than linear ones, lack interpretability, prohibiting their application in tasks requiring interpretability. This paper presents LXDR (Local eXplanation of Dimensionality Reduction), a local, model-agnostic technique that can be applied to any DR technique. LXDR trains linear models around a neighborhood of a specific instance and provides local interpretations using a variety of neighborhood generation techniques. Variations of the proposed technique are also introduced. The effectiveness of LXDR's interpretations is evaluated by quantitative and qualitative experiments, as well as demonstrations of its practical implementation in diverse use cases. The experiments emphasize the importance of interpretability in dimensionality reduction and how LXDR reinforces it.
 
 ## Requirements
-- For the quantitative analysis experiments, and for the two use cases (1 - supervised regression and topic representationn), we used req.txt, and we run the experiments in a docker build with the instructions apparent on "Dockerfile".
+- For the quantitative analysis experiments, and for the two use cases (1 - supervised regression and 2 - topic representationn), we used req.txt, and we run the experiments in a docker build with the instructions apparent on "Dockerfile".
 - For the Extreme multi-label classification use case (3rd), we use the req.txt python libraries, and run the experiments in Colab Pro.
 
 ## Use cases
@@ -21,7 +21,7 @@ Name | Email
 | Nick Bassiliades | nbassili@csd.auth.gr |
 
 ## Cite our Work
-Paper: [Local Explanation of Dimensionality Reduction](https://arxiv.org/abs/2204.14012) | To be presented in [SETN2022](https://hilab.di.ionio.gr/setn2022/)
+Paper submitted to IEEE Access. Until it is published, please cite the followinf paper:: [Local Explanation of Dimensionality Reduction](https://arxiv.org/abs/2204.14012)
 
 ## License
 [GNU GPLv3](https://choosealicense.com/licenses/gpl-3.0/)
