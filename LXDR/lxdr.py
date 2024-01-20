@@ -11,7 +11,7 @@ from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error as mae
 from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.neighbors import NearestNeighbors
-
+import shap
 
 def root_mean_squared_error(y_true, y_pred):
     return K.sqrt(K.sum(K.square(y_pred - y_true), axis=-1))
@@ -30,7 +30,8 @@ class LXDR:
                  initial_data=None,
                  mean=None,
                  ltype='neural',
-                 n_jobs=1):
+                 n_jobs=1,
+                 use_shap=False):
         """Init function.
 
         Args:
@@ -67,7 +68,10 @@ class LXDR:
         self.global_ = {}
         self.birch = {}
         self.type = ltype
-
+        
+        if use_shap:
+            self.use_shap = use_shap
+            
     def _pseudo_transform(self, input_data):
         if str(type(self.model)) == "<class '__main__.Autoencoder'>":
             return self.model.predict(np.array(input_data))
@@ -186,7 +190,10 @@ class LXDR:
                     self.global_['model'] = model
                 else:
                     model = self.global_['model']
-            _coef_per_component = ig(neighbours[0] - self.mean, model, reduced_dimensions)
+            if not self.use_shap:
+                _coef_per_component = ig(neighbours[0] - self.mean, model, reduced_dimensions)
+            else:
+                _coef_per_component = lxdr_shap(neighbours[0] - self.mean, model, reduced_dimensions, neighbours - self.mean)
         elif self.type == 'classic':
             if self.n_jobs != 1:
                 _coef_per_component = Parallel(n_jobs=self.n_jobs)(
@@ -715,7 +722,16 @@ class LXDR:
         plt.ylabel('Components')
         plt.title("Error between weights")
         plt.show()
+        
 
+def lxdr_shap(sample, model, reduced_dimensions, neighbours):
+    shap_explanation = []
+    for reduced_dimension in range(reduced_dimensions):
+        def model_dimension(instance):
+            return model.predict(instance)[:,reduced_dimension]
+        explainer = shap.KernelExplainer(model_dimension, neighbours)
+        shap_explanation.append(explainer.shap_values(np.array(sample)))
+    return shap_explanation
 
 def ig(sample, model, reduced_dimensions):
     baseline = tf.zeros(shape=(len(sample)))
